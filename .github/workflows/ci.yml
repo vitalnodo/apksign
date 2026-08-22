@@ -1,0 +1,68 @@
+name: ci
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # master, because src/x509.zig needs an asn1.der.Encoder that
+      # does not compile in 0.16.0.  See the README.
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: master
+
+      - run: zig fmt --check src/ build.zig
+      - run: zig build
+
+      - name: sign the fixture, and let apksigner judge it
+        run: |
+          set -euo pipefail
+          # apksigner comes with the Android SDK that ubuntu-latest
+          # ships preinstalled — nothing here installs it, so say so
+          # plainly if a runner ever turns up without one
+          : "${ANDROID_HOME:?no Android SDK on this runner}"
+          apksigner=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner
+          test -x "$apksigner" || { echo "no apksigner under $ANDROID_HOME" >&2; exit 1; }
+          echo "using $apksigner"
+          apksign=$PWD/zig-out/bin/apksign
+          fixture=$PWD/fixture/app.unsigned.apk
+
+          mkdir -p work && cd work
+          $apksign keygen -k key.pk8 -c cert.der
+          $apksign sign -i "$fixture" -o v1v2.apk -k key.pk8 -c cert.der
+          $apksign sign -i "$fixture" -o v1.apk -s v1 -k key.pk8 -c cert.der
+          $apksign sign -i "$fixture" -o v2.apk -s v2 -k key.pk8 -c cert.der
+
+          # --min-sdk-version 21 matters: from 24 apksigner does not look
+          # at the v1 signature at all, and a broken one would pass here
+          $apksigner verify --verbose --min-sdk-version 21 v1v2.apk
+          $apksigner verify --verbose --min-sdk-version 21 --max-sdk-version 23 v1.apk
+          $apksigner verify --verbose --min-sdk-version 24 v2.apk
+
+          # a warning is a failure: it is how apksigner reports a v1
+          # signature carrying no anti-stripping attribute
+          if $apksigner verify --verbose --min-sdk-version 21 v1v2.apk 2>&1 | grep WARNING; then
+            exit 1
+          fi
+
+          # nothing already in the archive may have moved or been recompressed
+          unzip -lv "$fixture" | grep -E 'Defl|Stored' > before.txt
+          unzip -lv v1v2.apk | grep -E 'Defl|Stored' | grep -v META-INF > after.txt
+          diff before.txt after.txt
+
+          # signing is deterministic (RFC 6979)
+          $apksign sign -i "$fixture" -o again.apk -k key.pk8 -c cert.der
+          cmp v1v2.apk again.apk
+
+          # and it refuses to sign what is signed already
+          if $apksign sign -i v1v2.apk -o no.apk -k key.pk8 -c cert.der; then
+            echo "signed an already-signed archive" >&2
+            exit 1
+          fi
