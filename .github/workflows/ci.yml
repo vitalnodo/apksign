@@ -12,11 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # master, because src/x509.zig needs an asn1.der.Encoder that
-      # does not compile in 0.16.0.  See the README.
       - uses: mlugg/setup-zig@v2
         with:
-          version: master
+          version: 0.17.0
 
       - run: zig fmt --check src/ build.zig
       - run: zig build

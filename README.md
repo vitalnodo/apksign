@@ -162,15 +162,7 @@ that is precisely what must not happen here.
 
 ## Requirements
 
-**Zig 0.17-dev (master)**, and the reason is ASN.1: declaring DER as a Zig type
-instead of assembling it byte by byte is what makes this a small program rather
-than a tedious one, and that only works on master. In 0.16.0
-`asn1.der.Encoder` does not compile at all — two declarations left behind by the
-move to the new writer interface, unnoticed because nothing inside std imports
-the module.
-
-The cost of master is that master moves. If this stops compiling, that is the
-likeliest reason.
+**Zig 0.17.0.**
 
 ## Checking it
 
@@ -207,6 +199,6 @@ verification — this signs, it does not check. The private key is a PKCS#8 file
 with no passphrase and there is no keystore. Deflate and store are the only
 compression methods it knows.
 
-## Licence
+## License
 
 MIT.
